@@ -6,7 +6,9 @@ import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
+import org.modelmapper.ModelMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +18,7 @@ import org.springframework.hateoas.Link;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.json.MappingJacksonValue;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,8 +27,13 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.fasterxml.jackson.databind.ser.FilterProvider;
+import com.fasterxml.jackson.databind.ser.impl.SimpleBeanPropertyFilter;
+import com.fasterxml.jackson.databind.ser.impl.SimpleFilterProvider;
+
 import br.unicamp.educorp.microservices.cursos.api.aula4.hateoas.LinkWithMethod;
 import br.unicamp.educorp.microservices.cursos.api.aula4.model.Curso;
+import br.unicamp.educorp.microservices.cursos.api.aula4.model.CursoDto;
 import br.unicamp.educorp.microservices.cursos.api.aula4.model.filter.FiltroCurso;
 import br.unicamp.educorp.microservices.cursos.api.aula4.repository.CursosRepository;
 
@@ -39,6 +47,9 @@ public class CursosController {
 
 	@Autowired
 	public Environment environment;
+
+	@Autowired
+	private ModelMapper modelMapper;
 
 	private String getHostPort() {
 		return environment.getProperty("local.server.port");
@@ -87,25 +98,25 @@ public class CursosController {
 			Curso _curso = cursoEntity.get();
 			_curso.setCodigo(curso.getCodigo());
 			_curso.setDescricao(curso.getDescricao());
-			return new ResponseEntity<Curso>(repository.save(curso),HttpStatus.OK);
+			return new ResponseEntity<Curso>(repository.save(curso), HttpStatus.OK);
 		} else {
 			return new ResponseEntity<Curso>(HttpStatus.NOT_FOUND);
 		}
 	}
-	
+
 	@PostMapping("/v3/cursos/filter")
 	public ResponseEntity<List<Curso>> getCursoByFilter(@RequestBody FiltroCurso filtro) {
 		log.info("buscando curso com filtro {} na porta {}", filtro, getHostPort());
-		
+
 		List<Curso> cursos = repository.findAllByCodigoContains(filtro.getCodigo());
-		
-		if(cursos == null || cursos .isEmpty()) {
+
+		if (cursos == null || cursos.isEmpty()) {
 			return ResponseEntity.notFound().build();
 		}
-		
+
 		return new ResponseEntity<List<Curso>>(cursos, HttpStatus.OK);
 	}
-	
+
 	@GetMapping("/v4/cursos/hateoas/{id}")
 	public ResponseEntity<?> getCursoHateoas(@PathVariable Integer id) {
 		log.info("buscando o curso hateoas {} na porta {}", id, getHostPort());
@@ -149,6 +160,36 @@ public class CursosController {
 		}
 
 		return new ResponseEntity<List<EntityModel<Curso>>>(cursosModel, HttpStatus.OK);
+	}
+
+	@GetMapping("/v4/cursos/mapping")
+	public MappingJacksonValue getAllCursosMapping() {
+		log.info("buscando todos os cursos mapping na porta {}", getHostPort());
+
+		SimpleBeanPropertyFilter filter = SimpleBeanPropertyFilter.filterOutAllExcept("codigo", "descricao");
+		FilterProvider filters = new SimpleFilterProvider().addFilter("CursoFilter", filter);
+
+		MappingJacksonValue mapping = new MappingJacksonValue(repository.findAll());
+		mapping.setFilters(filters);
+
+		return mapping;
+	}
+
+	@GetMapping("/v4/cursos/dto")
+	public ResponseEntity<?> getAllCursosDto() {
+		log.info("buscando todos os cursos dto na porta {}", getHostPort());
+
+		List<Curso> cursos = repository.findAll();
+		List<CursoDto> cursosDto = cursos//
+				.stream()//
+				.map(this::convertToDto)//
+				.collect(Collectors.toList());
+		return new ResponseEntity<List<CursoDto>>(cursosDto, HttpStatus.OK);
+	}
+
+	private CursoDto convertToDto(Curso curso) {
+		CursoDto cursoDto = modelMapper.map(curso, CursoDto.class);
+		return cursoDto;
 	}
 
 }
